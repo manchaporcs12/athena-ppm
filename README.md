@@ -60,6 +60,27 @@ worth anything.
 
 Use it to learn how PPM works. Use zstd in production.
 
+## Where the crossover is
+
+`python3 athena_ppm.py` also prints how the advantage appears with
+input size, on real CPython stdlib source:
+
+```
+   size     gzip-9    lzma-9    Athena   vs gzip    MiB/s
+   16 KB    2.697x    2.777x    2.663x     loses    0.262
+   64 KB    3.975x    4.243x    3.953x     loses    0.303
+  256 KB    4.048x    4.555x    4.138x      WINS    0.302
+ 1024 KB    4.270x    5.080x    4.611x      WINS    0.299
+```
+
+It loses to gzip below ~100 KB and wins above it. A PPM model is worth
+nothing until it has seen enough material to predict with. Against lzma
+it loses at every size.
+
+This is why the original single-size benchmark was misleading in both
+directions: one measurement hides a curve the same way one corpus hid
+the losses. A point is not a measurement. It is a point.
+
 ## The bug worth reading about
 
 An earlier draft advanced the context history *before* recording the

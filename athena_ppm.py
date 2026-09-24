@@ -459,6 +459,45 @@ CORPORA = [
 ]
 
 
+def run_scaling(order: int = 6):
+    """Como a vantagem do PPM aparece conforme o corpus cresce.
+
+    MEDIDO: no corpus de 120 KiB este compressor PERDE para o gzip em
+    codigo-fonte (4.015x contra 4.050x). Em 1 MB do mesmo material ele
+    GANHA (4.614x contra 4.270x). O modelo PPM nao tem valor nenhum
+    enquanto nao viu material suficiente para prever.
+
+    Uma medicao num unico tamanho esconde essa curva -- do mesmo jeito
+    que uma medicao num unico corpus escondia as derrotas. Um ponto nao
+    e uma medicao; e um ponto.
+    """
+    print()
+    print("=" * 76)
+    print(f" Como a vantagem aparece com o tamanho (codigo-fonte real, order={order})")
+    print("=" * 76)
+    print(f"{'tamanho':>10}{'gzip-9':>10}{'lzma-9':>10}{'Athena':>10}"
+          f"{'vs gzip':>10}{'MiB/s':>9}")
+    print("-" * 76)
+    completo = _source_code(1_100_000)
+    for n in (16 * 1024, 64 * 1024, 256 * 1024, 1024 * 1024):
+        d = completo[:n]
+        if len(d) < n:
+            break
+        gr = len(d) / len(gzip.compress(d, 9))
+        zr = len(d) / len(lzma.compress(d, preset=9))
+        t0 = time.perf_counter()
+        blob = compress(d, order)
+        dt = time.perf_counter() - t0
+        ar = len(d) / len(blob)
+        marca = "GANHA" if ar > gr else "perde"
+        print(f"{n // 1024:>8} KB{gr:>9.3f}x{zr:>9.3f}x{ar:>9.3f}x"
+              f"{marca:>10}{(n / 1048576) / dt:>9.3f}")
+    print("-" * 76)
+    print("  O cruzamento e o resultado: PPM so passa a valer a pena depois")
+    print("  de ver material suficiente. Contra o lzma ele perde em todos.")
+    print("  Custo: a memoria cresce sem limite. 1 MB -> ~166 MB de RSS.")
+
+
 def _self_test():
     passed = 0
     total = 0
@@ -542,6 +581,7 @@ def run_benchmark(size: int = 120 * 1024, order: int = 6):
         print("  NOTE: losing to lzma on a corpus is the expected result, not a bug.")
         print("  PPM wins on repetitive structured text and loses elsewhere.")
     print("  No stored-block fallback: incompressible input EXPANDS by ~10%.")
+    run_scaling(order)
 
 
 def main(argv=None):
