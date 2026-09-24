@@ -39,6 +39,12 @@ Runs at 0.05-0.55 MiB/s against gzip's 15-80 MiB/s on the same machine:
 50-150x slower. And with no stored-block fallback, incompressible input
 EXPANDS by ~10% where lzma holds at 0.999x.
 
+MEMORY GROWS WITHOUT BOUND. Contexts are added and never evicted. Measured
+on 1 MB of real source code: order 4 -> ~55 MB RSS, order 6 -> ~166 MB,
+order 8 -> ~344 MB. That is ~166x the input at the default order; a 100 MB
+file exhausts memory on most machines. A few MB is the practical ceiling.
+Order 8 doubles the memory of order 6 and buys nothing (4.613x vs 4.614x).
+
 Second lesson, same shape as the first: a true number measured on a corpus
 you chose is a measurement of the corpus, not of the compressor. The
 benchmark now runs five corpora and prints the losses.

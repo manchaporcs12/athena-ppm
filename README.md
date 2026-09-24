@@ -32,9 +32,31 @@ time.
 It is also slow. 0.05–0.55 MiB/s against gzip's 15–80 MiB/s on the same
 machine: **50–150x slower**. A 100 MB file takes minutes, not seconds.
 
-Known limitation, stated rather than hidden: there is no stored-block
-fallback, so incompressible input **expands by about 10%**. lzma holds
-at 0.999x because it falls back to storing raw. This does not.
+Two known limitations, stated rather than hidden.
+
+**No stored-block fallback**, so incompressible input **expands by about
+10%**. lzma holds at 0.999x because it falls back to storing raw. This
+does not.
+
+**The model grows without bound.** Contexts are added and never evicted,
+so memory scales with the variety of the input, not with a budget.
+Measured on 1 MB of real source code:
+
+```
+order 4    ratio 4.446x    2.9s    peak RSS  ~55 MB
+order 6    ratio 4.614x    3.2s    peak RSS ~166 MB
+order 8    ratio 4.613x    3.8s    peak RSS ~344 MB
+```
+
+That is roughly 166x the input size at the default order. A 100 MB file
+would exhaust memory on most machines. Treat a few MB as the practical
+ceiling. Note also that order 8 costs twice the memory of order 6 and
+buys nothing.
+
+Worth knowing in the other direction: on 1 MB of real source code it
+reaches **4.614x against gzip's 4.270x** — it beats gzip there, while on
+the 120 KiB sample above it does not. PPM needs data before its model is
+worth anything.
 
 Use it to learn how PPM works. Use zstd in production.
 
