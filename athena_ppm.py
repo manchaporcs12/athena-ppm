@@ -68,6 +68,7 @@ import gzip
 import zlib
 import lzma
 import os
+import pathlib
 import struct
 import time
 
@@ -556,7 +557,27 @@ def run_scaling(order: int = 6):
     print(f"{'tamanho':>10}{'gzip-9':>10}{'lzma-9':>10}{'Athena':>10}"
           f"{'vs gzip':>10}{'MiB/s':>9}")
     print("-" * 76)
-    completo = _source_code(1_100_000)
+    corpora = [("codigo-fonte", _source_code(1_100_000))]
+    # Segundo corpus, de outra natureza e NAO gerado aqui. Sem ele, a
+    # curva de cruzamento era afirmada de forma mais ampla do que a
+    # medicao sustentava -- o mesmo defeito, pela terceira vez.
+    palavras = pathlib.Path("/usr/share/dict/words")
+    if palavras.exists():
+        corpora.append(("dicionario", palavras.read_bytes()[:1_100_000]))
+
+    for rotulo, completo in corpora:
+        print(f"  corpus: {rotulo}")
+        _linha_scaling(completo, order)
+        print()
+    print("-" * 76)
+    print("  Em codigo-fonte existe um cruzamento: perde do gzip abaixo de")
+    print("  ~100 KB e ganha acima. Em dicionario NAO existe cruzamento --")
+    print("  perde em todos os tamanhos. O cruzamento e do corpus, nao do")
+    print("  compressor. Contra o lzma ele perde nos dois, em todo tamanho.")
+    print("  Custo: a memoria cresce sem limite. 1 MB -> ~166 MB de RSS.")
+
+
+def _linha_scaling(completo, order):
     for n in (16 * 1024, 64 * 1024, 256 * 1024, 1024 * 1024):
         d = completo[:n]
         if len(d) < n:
@@ -571,9 +592,6 @@ def run_scaling(order: int = 6):
         print(f"{n // 1024:>8} KB{gr:>9.3f}x{zr:>9.3f}x{ar:>9.3f}x"
               f"{marca:>10}{(n / 1048576) / dt:>9.3f}")
     print("-" * 76)
-    print("  O cruzamento e o resultado: PPM so passa a valer a pena depois")
-    print("  de ver material suficiente. Contra o lzma ele perde em todos.")
-    print("  Custo: a memoria cresce sem limite. 1 MB -> ~166 MB de RSS.")
 
 
 def _self_test():

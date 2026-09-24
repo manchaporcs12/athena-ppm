@@ -73,13 +73,29 @@ input size, on real CPython stdlib source:
  1024 KB    4.270x    5.080x    4.611x      WINS    0.299
 ```
 
-It loses to gzip below ~100 KB and wins above it. A PPM model is worth
-nothing until it has seen enough material to predict with. Against lzma
-it loses at every size.
+On **source code** it loses to gzip below ~100 KB and wins above it.
 
-This is why the original single-size benchmark was misleading in both
-directions: one measurement hides a curve the same way one corpus hid
-the losses. A point is not a measurement. It is a point.
+I first wrote that sentence without the words "on source code", and it
+was wrong. On `/usr/share/dict/words` — an alphabetical word list, a
+completely different shape of text — there is no crossover at all:
+
+```
+   size     gzip-9    lzma-9    Athena   vs gzip
+   16 KB    3.278x    3.549x    3.253x     loses
+   64 KB    3.132x    3.564x    3.022x     loses
+  256 KB    3.146x    3.661x    2.957x     loses
+ 2435 KB    3.306x    3.912x    2.997x     loses
+```
+
+It loses at every size. **The crossover belongs to the corpus, not to
+the compressor.** Against lzma it loses on both corpora at every size.
+
+That is the third time in this file that a true measurement got stated
+more broadly than it supported — first one corpus, then one size, now
+one kind of text. The benchmark now runs both corpora and prints both
+curves, so the claim can only be as wide as the measurement.
+
+A point is not a measurement. Neither is a line.
 
 ## The bug worth reading about
 
