@@ -14,13 +14,13 @@ CPython 3.13:
 
 ```
 corpus                       gzip-9   lzma-9   Athena  vs lzma    MiB/s  lossless
-http logs (generated here)  14.626x  16.054x  24.332x    1.52x    0.766  True
-source code (stdlib)         4.050x   4.406x   4.385x    1.00x    0.384  True
-json records                 3.194x   4.087x   3.745x    0.92x    0.345  True
-binary (/bin/bash)           1.926x   2.121x   2.063x    0.97x    0.144  True
-random (worst case)          1.000x   0.999x   0.905x    0.91x    0.054  True
+http logs (generated here)  14.626x  16.054x  25.010x    1.56x    0.394  True
+source code (stdlib)         4.050x   4.406x   4.480x    1.02x    0.184  True
+json records                 3.194x   4.087x   3.745x    0.92x    0.166  True
+binary (/bin/bash)           1.926x   2.121x   2.063x    0.97x    0.068  True
+random (worst case)          1.000x   0.999x   0.905x    0.91x    0.025  True
 
-  beats gzip on 4/5 corpora, lzma on 1/5.
+  beats gzip on 4/5 corpora, lzma on 2/5.
 ```
 
 Read that honestly: **it beats lzma on exactly one corpus, and that is
@@ -69,10 +69,10 @@ on two corpora of different shape.
 
 ```
    size     gzip-9    lzma-9    Athena   vs gzip
-   16 KB    2.697x    2.777x    2.909x      WINS
-   64 KB    3.975x    4.243x    4.296x      WINS
-  256 KB    4.048x    4.555x    4.479x      WINS
- 1024 KB    4.270x    5.080x    4.900x      WINS
+   16 KB    2.697x    2.777x    2.935x      WINS
+   64 KB    3.975x    4.243x    4.375x      WINS
+  256 KB    4.048x    4.555x    4.572x      WINS
+ 1024 KB    4.270x    5.080x    4.980x      WINS
 ```
 
 **`/usr/share/dict/words`**, an alphabetical word list — the curve runs
@@ -123,7 +123,52 @@ the ones they do.
 Four lines. It helps everywhere and it is faster, because it touches
 fewer tables.
 
-### Three more techniques, measured and rejected
+### What came out of the rejections
+
+Three reviewers proposed techniques. All three lost on at least one
+corpus, so all three were rejected. Then the table itself said something
+none of the individual results did:
+
+```
+                          source   logs    dict    json   binary
+  deterministic scaling   +1.89%  +1.74%  -1.44%  -1.29%  -1.04%
+```
+
+That technique is not good or bad. **It is good on structured text and
+bad on everything else.** Everyone who evaluates a technique on its
+average throws this away. Measuring the corpora separately makes the
+move obvious: don't choose.
+
+`compress()` now runs both models and keeps the smaller output, with one
+bit in the header recording which won.
+
+```
+corpus          before      after    delta   chose
+source code    4.8844x    4.9764x   +1.89%   scaled
+http logs     28.1667x   28.6578x   +1.74%   scaled
+dictionary     3.1351x    3.1351x    0.00%   plain
+json records   3.8327x    3.8327x    0.00%   plain
+binary         2.0308x    2.0308x    0.00%   plain
+random         0.8779x    0.8779x    0.00%   plain
+```
+
+**Zero regressions, by construction** — it cannot be worse than the
+better of the two. This is the only proposal in this project that passed
+the test that killed the others: *does it win everywhere, or does it
+pick a corpus?*
+
+The cost lands in the right place: **compression is 2x slower,
+decompression is unchanged** (0.76s vs 0.78s on 256 KiB). The decoder
+reads the bit and runs once. Whoever ships the file pays; whoever
+downloads it does not.
+
+This is not a new compression technique and I am not going to dress it
+up as one. It is "try both, keep the smaller", which is about as old as
+compression itself. What was new here was only the reason to try it: the
+per-corpus table. Averaging hides the case where a technique is a clean
+win half the time.
+
+### Three techniques, measured and rejected
 
 Three reviewers proposed documented PPM techniques. All three were
 implemented and measured against the same 512 KiB baseline. All three
