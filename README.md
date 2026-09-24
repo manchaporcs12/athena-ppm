@@ -128,12 +128,43 @@ python3 athena_ppm.py decompress output.ath restored.txt
 ```
 
 Corrupted or truncated streams raise `CorruptStreamError` rather than
-returning silent garbage. Both cases are covered by the self-test.
+returning silent garbage.
+
+That sentence was not true until an adversarial pass on 2026-09-24 found
+two ways to break it.
+
+**A one-bit flip could hang the decoder forever.** The original length is
+stored as an unverified 64-bit integer. Flipping its top bit turned
+`length=1200` into `9,223,372,036,854,777,008`, and the bit reader
+returned zeros past end-of-data instead of failing — so a **33-byte file
+decompressed indefinitely, with no error**. Anyone opening an untrusted
+`.ath` was exposed. The fix refuses to read more than 16 bytes past the
+end of the stream.
+
+**A one-bit flip could return wrong bytes silently.** Across 400 single-bit
+flips, 10 came back the *same length* as the original with different
+contents, through a perfectly valid decode path, and 7 came back at a
+different length — all without raising. The format had no integrity check
+at all. `ATH2` adds a CRC32 of the original data to the header.
+
+```
+400 single-bit flips        ATH1    ATH2
+  raised an error            379     396
+  wrong length, no error       7       0
+  wrong bytes, no error       10       0
+```
+
+Cost: 4 bytes per file, and the fuzz run went from not finishing in ten
+minutes to 0.7 seconds. Both are now self-tests 27 and 28.
+
+This is the same lesson as the compression bug, one layer up: a decode
+that follows a structurally valid path is not a decode that returned your
+data. Valid form is not valid content.
 
 ## Self-test
 
 ```
-26/26 self-tests passing
+28/28 self-tests passing
 ```
 
 Round-trip across model orders 1, 2, 4 and 6 against six payloads,

@@ -65,6 +65,7 @@ input (see CorruptStreamError) -- same class of gap as main.py/ppm2.py.
 from __future__ import annotations
 import argparse
 import gzip
+import zlib
 import lzma
 import os
 import struct
@@ -152,9 +153,33 @@ class ArithmeticDecoder:
         for _ in range(_PREC):
             self.value = ((self.value << 1) | self._read_bit()) & _MASK
 
+    # Quantos bytes o decodificador pode ler ALEM do fim do stream antes
+    # de desistir. Um stream legitimo ultrapassa no maximo o flush final
+    # do encoder (poucos bytes); 16 e folga generosa.
+    _FOLGA_FIM = 16
+
     def _read_bit(self):
         if self._nbits == 0:
-            self._buf = self.data[self.pos] if self.pos < len(self.data) else 0
+            if self.pos < len(self.data):
+                self._buf = self.data[self.pos]
+            elif self.pos < len(self.data) + self._FOLGA_FIM:
+                # flush final do encoder: zeros aqui sao legitimos
+                self._buf = 0
+            else:
+                # MEDIDO (2026-09-24): sem esta guarda, virar UM bit no
+                # campo de tamanho (struct "<BBQ", 64 bits, sem validacao)
+                # transformava length=1200 em 9.223.372.036.854.777.008. O
+                # decodificador seguia pedindo bits, este metodo devolvia
+                # zero para sempre, e um arquivo de 33 bytes rodava sem
+                # parar e sem erro. Um .ath vindo de fora travava a maquina.
+                #
+                # A guarda e sobre LER ALEM DO FIM, nao sobre o tamanho
+                # declarado: depois que os dados acabam, tudo que vier e
+                # invencao, entao nao ha o que decodificar.
+                raise CorruptStreamError(
+                    "stream ended but the decoder kept asking for bits; "
+                    "the declared length is larger than this data can hold"
+                )
             self.pos += 1
             self._nbits = 8
         self._nbits -= 1
@@ -323,7 +348,17 @@ class AthenaPPM:
         return s
 
 
-_MAGIC = b"ATH1"
+_MAGIC = b"ATH2"
+
+# ATH2 acrescenta um CRC32 dos dados ORIGINAIS ao cabecalho.
+#
+# MEDIDO (2026-09-24): com o formato ATH1, virar um unico bit no stream
+# devolvia lixo do MESMO TAMANHO, sem erro, em 10 de 400 tentativas
+# (2,5%). O round-trip e a guarda de fim de stream nao pegam isso: o
+# decodificador segue um caminho valido, so que errado.
+#
+# 4 bytes no cabecalho trocam "provavelmente correto" por "verificado".
+# Nenhum .ath existia fora desta maquina quando o formato mudou.
 _HEADER_LEN = 4 + 1 + 1 + 8
 
 
@@ -332,7 +367,9 @@ def compress(data: bytes, max_order: int = 6, increment: int = 1) -> bytes:
     enc = ArithmeticEncoder()
     for b in data:
         m.encode_symbol(enc, b)
-    return _MAGIC + struct.pack("<BBQ", max_order, increment, len(data)) + enc.finish()
+    return (_MAGIC + struct.pack("<BBQI", max_order, increment, len(data),
+                                 zlib.crc32(data) & 0xFFFFFFFF)
+            + enc.finish())
 
 
 def decompress(blob: bytes) -> bytes:
@@ -344,16 +381,16 @@ def decompress(blob: bytes) -> bytes:
     """
     if len(blob) < _HEADER_LEN:
         raise CorruptStreamError(
-            f"stream ATH1 truncado: esperava >= {_HEADER_LEN} bytes de cabecalho, "
+            f"stream ATH2 truncado: esperava >= {_HEADER_LEN} bytes de cabecalho, "
             f"recebeu {len(blob)}"
         )
     if blob[:4] != _MAGIC:
-        raise CorruptStreamError("not an ATH1 stream")
-    max_order, increment, length = struct.unpack("<BBQ", blob[4:14])
+        raise CorruptStreamError("not an ATH2 stream")
+    max_order, increment, length, crc = struct.unpack("<BBQI", blob[4:18])
     if max_order < 1 or max_order > 12:
         raise CorruptStreamError(f"max_order={max_order} fora do teto sensato (cabecalho corrompido?)")
 
-    payload = blob[14:]
+    payload = blob[18:]
     m = AthenaPPM(max_order, increment, 'D')
     dec = ArithmeticDecoder(payload)
     out = bytearray()
@@ -362,8 +399,24 @@ def decompress(blob: bytes) -> bytes:
 
     if dec.pos > len(payload) + 8:
         raise CorruptStreamError(
-            f"stream ATH1 truncado: decodificacao de {length} simbolos consumiu "
+            f"stream ATH2 truncado: decodificacao de {length} simbolos consumiu "
             f"alem do payload disponivel ({dec.pos} vs {len(payload)} bytes)"
+        )
+
+    # A ultima verificacao, e a unica que olha o CONTEUDO.
+    #
+    # As guardas acima atestam que o stream tinha forma valida. Nao
+    # atestam que os bytes sao os que entraram: medido, 10 em 400 bits
+    # virados devolviam lixo do mesmo tamanho por um caminho de
+    # decodificacao perfeitamente valido. Forma correta nao e conteudo
+    # correto -- e a mesma licao do bug que tornava este compressor
+    # perfeitamente sem perdas e 55% maior.
+    real = zlib.crc32(bytes(out)) & 0xFFFFFFFF
+    if real != crc:
+        raise CorruptStreamError(
+            f"checksum mismatch: header says {crc:08x}, decoded data is "
+            f"{real:08x}. The stream decoded without structural error but "
+            f"the bytes are not the ones that went in."
         )
     return bytes(out)
 
@@ -529,6 +582,40 @@ def _self_test():
         check("magic errado levanta CorruptStreamError", False)
     except CorruptStreamError:
         check("magic errado levanta CorruptStreamError", True)
+
+    # Os dois achados da auditoria de 2026-09-24. Nenhum dos 26 testes
+    # anteriores os teria pego: ambos passam por caminhos de decodificacao
+    # estruturalmente validos.
+    import struct as _st
+
+    alvo = compress(b"hello world " * 100, 6)
+
+    # (a) campo de tamanho e um inteiro de 64 bits sem validacao. Virar um
+    # bit transformava length=1200 em 9.223.372.036.854.777.008 e a
+    # descompressao rodava sem parar, sem erro. Um arquivo de 33 bytes
+    # travava a maquina de quem abrisse.
+    quebrado = bytearray(alvo)
+    quebrado[13] ^= 0x80
+    try:
+        decompress(bytes(quebrado))
+        check("tamanho absurdo no cabecalho levanta CorruptStreamError", False)
+    except CorruptStreamError:
+        check("tamanho absurdo no cabecalho levanta CorruptStreamError", True)
+
+    # (b) bit virado no payload devolvia lixo do MESMO TAMANHO em 10 de 400
+    # tentativas, sem erro nenhum. Forma valida nao e conteudo valido.
+    pego = 0
+    for i in range(24):
+        c = bytearray(alvo)
+        c[18 + (i % max(1, len(alvo) - 18))] ^= 1 << (i % 8)
+        try:
+            if decompress(bytes(c)) != b"hello world " * 100:
+                pego += 0  # devolveu diferente sem erro: nao conta como pego
+            else:
+                pego += 1  # bit irrelevante, saida correta
+        except CorruptStreamError:
+            pego += 1
+    check(f"bit virado no payload nunca devolve lixo silencioso ({pego}/24)", pego == 24)
 
     print(f"\n{passed}/{total} self-tests passando")
     return passed == total
