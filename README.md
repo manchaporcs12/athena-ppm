@@ -123,6 +123,40 @@ the ones they do.
 Four lines. It helps everywhere and it is faster, because it touches
 fewer tables.
 
+### Three more techniques, measured and rejected
+
+Three reviewers proposed documented PPM techniques. All three were
+implemented and measured against the same 512 KiB baseline. All three
+were rejected. The numbers are the useful part.
+
+```
+                          source   logs    dict    json   binary
+  SEE-lite                -4.98%  -5.00%  -3.10%     --      --
+  deterministic scaling   +1.89%  +1.74%  -1.44%  -1.29%  -1.04%
+    conditioned c>=2      +0.64%  +1.15%  -0.62%  +0.22%  -0.03%
+```
+
+**SEE-lite** (secondary escape estimation, PPMZ/Bloom). Instead of
+assuming the escape is worth `len(items)`, learn from the file itself
+how often similar contexts actually escape — 16 buckets of
+`(hits, escapes)`. The reviewer estimated +1–3% and said plainly it was
+an estimate, not a measurement. Measured: **−3% to −5% on everything.**
+Real PPMZ SEE is far more elaborate than 25 readable lines; this says
+nothing about the technique, only about this implementation of it.
+
+**Deterministic scaling** (Teahan & Cleary, 1997). Double a symbol's
+weight when its context has exactly one prediction. Two lines. The
+reviewer predicted +2.13% on source (measured +1.89%) and predicted
+−1.29% on noisy data — measured −1.29% exactly. A conditioned variant
+(`c >= 2`) was also predicted and measured: right on source, wrong
+direction on the dictionary.
+
+Both predictions were unusually good. Neither technique survives the
+same test that killed the first benchmark: **does it win on every
+corpus, or does it pick one?** Under 2%, and trading one kind of text
+for another, is not an improvement — it is choosing what to look good
+at.
+
 **Exclusion after estimation — measured and rejected.** A documented
 PPMD technique: when symbols are excluded by a higher-order context,
 don't shrink the escape estimate as if they had never existed. Two
