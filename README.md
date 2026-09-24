@@ -14,13 +14,13 @@ CPython 3.13:
 
 ```
 corpus                       gzip-9   lzma-9   Athena  vs lzma    MiB/s  lossless
-http logs (generated here)  14.626x  16.054x  21.754x    1.36x    0.545  True
-source code (stdlib)         4.050x   4.406x   4.015x    0.91x    0.321  True
-json records                 3.194x   4.087x   3.520x    0.86x    0.300  True
-binary (/bin/bash)           1.926x   2.121x   1.946x    0.92x    0.137  True
+http logs (generated here)  14.626x  16.054x  24.332x    1.52x    0.766  True
+source code (stdlib)         4.050x   4.406x   4.385x    1.00x    0.384  True
+json records                 3.194x   4.087x   3.745x    0.92x    0.345  True
+binary (/bin/bash)           1.926x   2.121x   2.063x    0.97x    0.144  True
 random (worst case)          1.000x   0.999x   0.905x    0.91x    0.054  True
 
-  beats gzip on 3/5 corpora, lzma on 1/5.
+  beats gzip on 4/5 corpora, lzma on 1/5.
 ```
 
 Read that honestly: **it beats lzma on exactly one corpus, and that is
@@ -60,42 +60,46 @@ worth anything.
 
 Use it to learn how PPM works. Use zstd in production.
 
-## Where the crossover is
+## Where the crossover is, and why it is not one thing
 
-`python3 athena_ppm.py` also prints how the advantage appears with
-input size, on real CPython stdlib source:
+`python3 athena_ppm.py` prints how the advantage moves with input size,
+on two corpora of different shape.
 
-```
-   size     gzip-9    lzma-9    Athena   vs gzip    MiB/s
-   16 KB    2.697x    2.777x    2.663x     loses    0.262
-   64 KB    3.975x    4.243x    3.953x     loses    0.303
-  256 KB    4.048x    4.555x    4.138x      WINS    0.302
- 1024 KB    4.270x    5.080x    4.611x      WINS    0.299
-```
-
-On **source code** it loses to gzip below ~100 KB and wins above it.
-
-I first wrote that sentence without the words "on source code", and it
-was wrong. On `/usr/share/dict/words` — an alphabetical word list, a
-completely different shape of text — there is no crossover at all:
+**CPython stdlib source** — it wins at every size measured:
 
 ```
    size     gzip-9    lzma-9    Athena   vs gzip
-   16 KB    3.278x    3.549x    3.253x     loses
-   64 KB    3.132x    3.564x    3.022x     loses
-  256 KB    3.146x    3.661x    2.957x     loses
- 2435 KB    3.306x    3.912x    2.997x     loses
+   16 KB    2.697x    2.777x    2.909x      WINS
+   64 KB    3.975x    4.243x    4.296x      WINS
+  256 KB    4.048x    4.555x    4.479x      WINS
+ 1024 KB    4.270x    5.080x    4.900x      WINS
 ```
 
-It loses at every size. **The crossover belongs to the corpus, not to
-the compressor.** Against lzma it loses on both corpora at every size.
+**`/usr/share/dict/words`**, an alphabetical word list — the curve runs
+the *other way*:
 
-That is the third time in this file that a true measurement got stated
-more broadly than it supported — first one corpus, then one size, now
-one kind of text. The benchmark now runs both corpora and prints both
-curves, so the claim can only be as wide as the measurement.
+```
+   size     gzip-9    lzma-9    Athena   vs gzip
+   16 KB    3.278x    3.549x    3.456x      WINS
+   64 KB    3.132x    3.564x    3.210x      WINS
+  256 KB    3.146x    3.661x    3.110x     loses
+ 1024 KB    3.276x    3.855x    3.152x     loses
+ 2435 KB    3.306x    3.912x    3.109x     loses
+```
+
+It wins small and loses large. On source code it wins throughout. **The
+crossover belongs to the corpus, not to the compressor** — and it does
+not even point the same direction on both.
+
+An earlier version of this file said "it loses to gzip below ~100 KB and
+wins above it". That was measured on source code only, and it was the
+third time in this project that a true number was stated more broadly
+than it supported: first one corpus, then one size, then one kind of
+text. The benchmark now runs both corpora and prints both curves.
 
 A point is not a measurement. Neither is a line.
+
+Against lzma it loses on both corpora at every size.
 
 ## What made it better, and what did not
 
