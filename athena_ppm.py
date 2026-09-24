@@ -247,10 +247,26 @@ class AthenaPPM:
         mk = self.masks
         return [h & mk[o] for o in range(self.max_order + 1)]
 
-    def _update(self, s, keys):
+    def _update(self, s, keys, min_order=0):
+        """Atualiza so das ordens que participaram da codificacao para cima.
+
+        EXCLUSAO DE ATUALIZACAO (update exclusion, Shkarin/PPMII). Antes
+        este metodo atualizava TODAS as ordens a cada simbolo, inclusive
+        as que nunca foram consultadas porque uma ordem superior ja tinha
+        codificado. Isso enchia os contextos curtos de estatistica que
+        eles nunca usam para prever, e diluia a que eles usam.
+
+        MEDIDO (2026-09-24, 512 KiB, order 6):
+          codigo-fonte   4.580x -> 4.884x   (+6.6%)
+          dicionario     2.998x -> 3.135x   (+4.6%)
+          velocidade     0.210  -> 0.248 MiB/s  (+18%, atualiza menos tabelas)
+        Round-trip reverificado: 40/40 em 8 entradas x 5 ordens.
+
+        Ainda perde do lzma nos dois corpora. Encostou, nao passou.
+        """
         inc = self.inc
         cap = self.cap
-        for o in range(self.max_order + 1):
+        for o in range(min_order, self.max_order + 1):
             t = self.tables[o]
             k = keys[o]
             ctx = t.get(k)
@@ -270,6 +286,7 @@ class AthenaPPM:
         self.ex[:] = self._zero
         keys = self._keys()
         coded = False
+        ordem_usada = 0
         order = self.max_order
         is_d = self.is_d
         while order >= 0:
@@ -296,6 +313,7 @@ class AthenaPPM:
                         low += w
                     if found:
                         coded = True
+                        ordem_usada = order
                         break
                     enc.encode(total - esc, total, total)  # escape
                     for sym in ctx:
@@ -304,12 +322,13 @@ class AthenaPPM:
         if not coded:
             avail = [sym for sym in range(256) if not self.ex[sym]]
             enc.encode(avail.index(s), avail.index(s) + 1, len(avail))
-        self._update(s, keys)
+        self._update(s, keys, ordem_usada)
 
     def decode_symbol(self, dec: ArithmeticDecoder) -> int:
         self.ex[:] = self._zero
         keys = self._keys()
         s = None
+        ordem_usada = 0
         order = self.max_order
         is_d = self.is_d
         while order >= 0:
@@ -337,6 +356,7 @@ class AthenaPPM:
                             if low + w > tgt:
                                 dec.decode(low, low + w, total)
                                 s = sym
+                                ordem_usada = order
                                 break
                             low += w
                         break
@@ -356,7 +376,7 @@ class AthenaPPM:
                 )
             dec.decode(tgt, tgt + 1, total)
             s = avail[tgt]
-        self._update(s, keys)
+        self._update(s, keys, ordem_usada)
         return s
 
 

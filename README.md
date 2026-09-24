@@ -97,6 +97,51 @@ curves, so the claim can only be as wide as the measurement.
 
 A point is not a measurement. Neither is a line.
 
+## What made it better, and what did not
+
+Two techniques from the PPM literature were implemented and measured.
+One was kept. One was measured and rejected, which is the more useful
+half of the story.
+
+**Update exclusion (Shkarin / PPMII) — kept.** The model was updating
+*every* order on every symbol, including the short contexts that were
+never consulted because a longer one had already coded the symbol. That
+fills low orders with statistics they never use to predict, and dilutes
+the ones they do.
+
+```
+512 KiB, order 6        before      after
+  source code           4.580x     4.884x   +6.6%
+  dictionary            2.998x     3.135x   +4.6%
+  speed                 0.210      0.248 MiB/s   +18%
+```
+
+Four lines. It helps everywhere and it is faster, because it touches
+fewer tables.
+
+**Exclusion after estimation — measured and rejected.** A documented
+PPMD technique: when symbols are excluded by a higher-order context,
+don't shrink the escape estimate as if they had never existed. Two
+lines: `esc = len(items)` becomes `esc = len(ctx)`.
+
+```
+512 KiB, order 6        delta
+  source code           +0.66%
+  http logs             +0.30%
+  dictionary            -0.46%
+```
+
+Everything under 1%, and it trades one corpus for another. Taking it
+would mean choosing which kind of text this compressor looks good on —
+which is the original sin of this file's first benchmark, in a more
+sophisticated costume. It also makes the escape weight harder to read,
+and readability is the only thing here worth protecting.
+
+Proposed and independently measured by an external reviewer, who
+predicted +0.606% on source code and flagged that he could not predict
+what the dictionary would do. Measured here: +0.66%, and the dictionary
+fell. Both halves of that prediction were right.
+
 ## The bug worth reading about
 
 An earlier draft advanced the context history *before* recording the
