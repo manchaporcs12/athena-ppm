@@ -389,6 +389,20 @@ def decompress(blob: bytes) -> bytes:
     max_order, increment, length, crc = struct.unpack("<BBQI", blob[4:18])
     if max_order < 1 or max_order > 12:
         raise CorruptStreamError(f"max_order={max_order} fora do teto sensato (cabecalho corrompido?)")
+    # increment vem do cabecalho e nao era validado.
+    #
+    # MEDIDO (2026-09-24, achado por auditoria externa): com increment=0
+    # toda contagem fica em zero, o peso do metodo D vira 2*0-1 = -1, e o
+    # total do intervalo chega a zero -- ZeroDivisionError cru, nao
+    # CorruptStreamError. Um byte do cabecalho derrubava o processo com um
+    # traceback em vez de uma recusa limpa.
+    #
+    # Achado que eu nao achei: os meus 400 bits virados batiam no payload,
+    # nao nos campos do cabecalho. Fuzzing so encontra onde voce aponta.
+    if increment < 1 or increment > 64:
+        raise CorruptStreamError(
+            f"increment={increment} is out of range (1..64); header is corrupt"
+        )
 
     payload = blob[18:]
     m = AthenaPPM(max_order, increment, 'D')
@@ -616,6 +630,22 @@ def _self_test():
         except CorruptStreamError:
             pego += 1
     check(f"bit virado no payload nunca devolve lixo silencioso ({pego}/24)", pego == 24)
+
+    # (c) Achado por auditoria externa: todo byte do cabecalho precisa
+    # recusar limpo, nunca derrubar o processo. increment=0 levantava
+    # ZeroDivisionError cru. Varre os dois campos inteiros.
+    cru = 0
+    for idx in (4, 5):
+        for v in range(256):
+            c = bytearray(alvo)
+            c[idx] = v
+            try:
+                decompress(bytes(c))
+            except CorruptStreamError:
+                pass
+            except Exception:
+                cru += 1
+    check(f"512 cabecalhos corrompidos, nenhum crash cru ({cru} crashes)", cru == 0)
 
     print(f"\n{passed}/{total} self-tests passando")
     return passed == total

@@ -157,6 +157,20 @@ at all. `ATH2` adds a CRC32 of the original data to the header.
 Cost: 4 bytes per file, and the fuzz run went from not finishing in ten
 minutes to 0.7 seconds. Both are now self-tests 27 and 28.
 
+**A third one came from an outside audit, and it is the one I missed.**
+`increment` is read from the header and was never validated. With
+`increment=0` every count stays at zero, the method-D weight becomes
+`2*0-1 = -1`, the interval total reaches zero, and the process dies with
+a raw `ZeroDivisionError` instead of refusing. One header byte, one
+traceback.
+
+My own 400-flip fuzzing never found it because I was flipping bits in
+the payload, not in the header fields. Fuzzing only finds what you aim
+it at.
+
+Both header bytes are now swept exhaustively in self-test 29: 512
+corrupted headers, 0 raw crashes.
+
 This is the same lesson as the compression bug, one layer up: a decode
 that follows a structurally valid path is not a decode that returned your
 data. Valid form is not valid content.
@@ -164,7 +178,7 @@ data. Valid form is not valid content.
 ## Self-test
 
 ```
-28/28 self-tests passing
+29/29 self-tests passing
 ```
 
 Round-trip across model orders 1, 2, 4 and 6 against six payloads,
