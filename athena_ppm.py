@@ -739,8 +739,19 @@ def main(argv=None):
     else:
         ok = True
         if args.selftest:
+            # --selftest roda SO os testes.
+            #
+            # Antes ele rodava os testes e em seguida o benchmark, sempre:
+            # 14 segundos, 63 linhas, e o "29/29 passando" ficava na linha
+            # 31. A ultima coisa na tela era o aviso de memoria. Uma FALHA
+            # teria rolado para fora da tela do mesmo jeito.
+            #
+            # Achado rodando os comandos do README como um estranho faria,
+            # em vez de ler o codigo. E o primeiro comando que alguem
+            # digita: o resultado dele tem de ser a ultima linha.
             ok = _self_test()
-        run_benchmark(args.size, args.order)
+        else:
+            run_benchmark(args.size, args.order)
         if not ok:
             raise SystemExit(1)
 
