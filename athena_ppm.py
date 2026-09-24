@@ -154,9 +154,20 @@ class ArithmeticDecoder:
             self.value = ((self.value << 1) | self._read_bit()) & _MASK
 
     # Quantos bytes o decodificador pode ler ALEM do fim do stream antes
-    # de desistir. Um stream legitimo ultrapassa no maximo o flush final
-    # do encoder (poucos bytes); 16 e folga generosa.
-    _FOLGA_FIM = 16
+    # de desistir.
+    #
+    # MEDIDO (2026-09-24): arquivos legitimos ultrapassam no MAXIMO 4
+    # bytes -- medido em 9 tipos de entrada (vazia, 1 byte, texto,
+    # aleatoria, 256 simbolos, logs, 70k do mesmo byte) nas ordens 1 e 6.
+    # O teto e 8: o dobro do maximo observado, e o MESMO numero usado na
+    # verificacao final de decompress().
+    #
+    # Uma auditoria externa apontou que este valor era 16 enquanto
+    # decompress() exigia 8 -- duas tolerancias diferentes para a mesma
+    # coisa. Nao causava recusa indevida (nenhum arquivo valido chega
+    # perto de 8), mas dois numeros para uma regra so e um convite: o
+    # proximo a mexer conserta um e esquece o outro.
+    _FOLGA_FIM = 8
 
     def _read_bit(self):
         if self._nbits == 0:
